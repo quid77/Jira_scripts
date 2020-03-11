@@ -1,0 +1,4 @@
+/.idea/workspace.xml
+venv/
+__pycache__/
+debug.log
