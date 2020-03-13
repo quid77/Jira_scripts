@@ -8,22 +8,18 @@ from selenium.webdriver.support import expected_conditions as EC
 import os
 import shutil
 import difflib
-from glob import glob
+import glob
 import re
 import win32com.client as win32
 from win32com.client import constants
-# from docx import Document
 import docx
-import glob
 import fnmatch
 import unittest
 
 
-
-
 download_path = "C:\\PycharmProjects\\Jira_scripts\\Downloads";
-user_login = "akulig"
-user_password = "5lazzjdzZ!!"
+user_login = "abc"
+user_password = "abc"
 
 
 class JiraTestsDownload(unittest.TestCase):
@@ -102,80 +98,85 @@ def rename_files():
 def move_files():
     if not os.path.exists(download_path + "\\DocFiles"):
         os.makedev(download_path + "\\DocFiles")
+    # Create list of paths to .doc files
     for filename in os.listdir(download_path):
         if filename.endswith(".doc"):
             file_path = download_path + "\\" + filename
             shutil.move(file_path, download_path + "\\DocFiles")
 
-# Create list of paths to .doc files
-paths = os.listdir(r"C:/PycharmProjects/Jira_scripts/Downloads/DocFiles")
 
-def save_as_docx(path):
+# Create list of paths to .doc files
+# paths_to_files = os.listdir(r"C:/PycharmProjects/Jira_scripts/Downloads/DocFiles")
+
+# this function isn't standalone, use save_to_docx instead
+def save_as_docx(paths_to_files):  # Github convertion solution
     # Opening MS Word
     word = win32.gencache.EnsureDispatch('Word.Application')
-    doc = word.Documents.Open(path)
-    doc.Activate ()
+    doc = word.Documents.Open(paths_to_files)
+    doc.Activate()
 
-#     # Rename path with .docx
-#     new_file_abs = os.path.abspath(path)
-#     new_file_abs = re.sub(r'\.\w+$', '.docx', new_file_abs)
-#
-#     # Save and Close
-#     word.ActiveDocument.SaveAs(
-#         new_file_abs, FileFormat=constants.wdFormatXMLDocument
-#     )
-#     doc.Close(False)
-#
-#
-#
-# for path in paths:
-#     save_as_docx(path)
-# os.chdir("C:\\Users\\jpiet\\Downloads\\DocFiles")
-# doc = os.listdir("C:\\Users\\jpiet\\Downloads\\DocFiles")
-# for item in doc:
-#     if item.endswith(".doc"):
-#         os.remove(item)
-# time.sleep(10)
-# #Read word document
-# path = 'C:\\Users\\jpiet\\Downloads\\DocFiles\\Copy*'
-# files = glob.glob(path)
-# os.chdir("C:\\Users\\jpiet\\Downloads")
-# for file in files:
-#
-#     doc = docx.Document(file)
-#     table = doc.tables
-#     titlle = table[0].rows[0].cells[0].text
-#     print(titlle)
-#     title_split = titlle.split()
-#     print(title_split)
-#     idTest= title_split[0]
-#     print(idTest)
-#     step2= table[2].rows[2].cells[0].text
-#     print(step2)
-#     if step2 == "Zephyr Teststep:":
-#         Testy_zefirowe = table[2].rows[2].cells[1]
-#     else:
-#         Testy_zefirowe = table[2].rows[3].cells[1]
-#     tabela_zefir = Testy_zefirowe.tables
-#     step1 = tabela_zefir[0].rows[-1].cells[0].text
-#
-#     print(step1)
-#
-#     tab_zef = tabela_zefir[0].rows
-#     tab_zef = tab_zef[1:] # obcinanie tytulu test stepow
-#
-#     lista_stepow = []
-#     for row in tab_zef:
-#         lista_stepow.append(row.cells[1].text)
-#
-#     lista_stepow[0]
-#     #Test Condition
-#     lista_TestCondition=[]
-#
-#     for row in tab_zef:
-#         lista_TestCondition.append(row.cells[2].text)
-#
-#     lista_ExpResult=[]
+    # Rename path with .docx
+    new_file_abs = os.path.abspath(paths_to_files)
+    new_file_abs = re.sub(r'\.\w+$', '.docx', new_file_abs)
+
+    # Save and Close
+    word.ActiveDocument.SaveAs(new_file_abs, FileFormat=constants.wdFormatXMLDocument)
+    doc.Close(False)
+
+
+def save_to_docx():
+    paths_to_file = os.listdir(r"C:\PycharmProjects\Jira_scripts\Downloads\DocFiles")
+    paths_to_files = [download_path + "\\DocFiles\\" + path for path in paths_to_file]
+    for path in paths_to_files:
+        save_as_docx(path)
+
+def remove_doc_files():
+    os.chdir(download_path + "\\DocFiles")
+    filenames = os.listdir(download_path + "\\DocFiles")
+    for file in filenames:
+        if file.endswith(".doc"):
+            os.remove(file)
+    time.sleep(3)
+
+
+def read_docx_files():
+    files = glob.glob(download_path + "\\DocFiles\\Copy*")
+    os.chdir(download_path)
+    for file in files:
+        docx_handler = docx.Document(file)
+        docx_tables = docx_handler.tables
+        title = docx_tables[0].rows[0].cells[0].text
+        print(title)
+        title_split = title.split()
+        print(title_split)
+        jira_test_id = title_split[0]
+        print(jira_test_id)
+        zephyr_teststeps = docx_tables[2].rows[2].cells[0].text
+        print(zephyr_teststeps)
+        if zephyr_teststeps == "Zephyr Teststep:":
+            zephyr_tests = docx_tables[2].rows[2].cells[1]
+        else:
+            zephyr_tests = docx_tables[2].rows[3].cells[1]
+        zephyr_tests_table = zephyr_tests.tables
+        number_of_teststeps = zephyr_tests_table[0].rows[-1].cells[0].text  # teststep 1???
+
+        print(number_of_teststeps)
+
+        tab_zef = zephyr_tests_table[0].rows
+        tab_zef = tab_zef[1:]  # obcinanie tytulu test stepow
+
+        lista_stepow = []
+        for row in tab_zef:
+            lista_stepow.append(row.cells[1].text)
+
+        lista_stepow[0]
+        #Test Condition
+        lista_TestCondition=[]
+
+        for row in tab_zef:
+            lista_TestCondition.append(row.cells[2].text)
+
+     lista_ExpResult=[]
 #     for row in tab_zef:
 #         lista_ExpResult.append(row.cells[3].text)
 #     if step1 == "2":
@@ -254,5 +255,11 @@ if __name__ == "__main__":
 
     # unittest.main()
     # paths = glob.glob('C:/PycharmProjects/Jira_scripts/Downloads/DocFiles/**/*.doc', recursive=True)
-    paths = os.listdir(r"C:/PycharmProjects/Jira_scripts/Downloads/DocFiles")
+    # paths = os.listdir(r"C:/PycharmProjects/Jira_scripts/Downloads/DocFiles")
+    # paths_to_files = os.listdir(r"C:/PycharmProjects/Jira_scripts/Downloads/DocFiles")
+    # save_to_docx()
+    # remove_doc_files()
+    # read_docx_files()
+    read_docx_files()
+
 
