@@ -13,7 +13,7 @@ import glob
 import re
 import win32com.client as win32
 from win32com.client import constants
-import docx
+import docx, docxpy
 import unittest
 
 
@@ -65,12 +65,14 @@ class JiraTestsDownload(unittest.TestCase):
         while True:
             tests_list = driver.find_elements_by_class_name("splitview-issue-link")
             for test_element in tests_list:
+                if tests_list.index(test_element) == 3:  # FOR TESTIG ONLY
+                    break  # FOR TESTIG ONLY
                 test_element.click()
                 for x in range(0, 10):
                     try:
                         test_element_key = test_element.find_element_by_xpath(".//span[@class='issue-link-key']").text
                         wait.until(EC.presence_of_element_located((By.XPATH, "//a[@id='key-val']".format(test_element_key))))
-                        JiraTestsDownload.add_test_to_epic(self, test_element_key)
+                        # JiraTestsDownload.add_test_to_epic(self, test_element_key)
                         break
                     except (StaleElementReferenceException, TimeoutException):
                         time.sleep(0.2)
@@ -86,6 +88,7 @@ class JiraTestsDownload(unittest.TestCase):
                         time.sleep(0.2)
                         continue
             try:
+                break  # FOR TESTIG ONLY
                 wait.until(EC.element_to_be_clickable((By.XPATH, "//a[@class='icon icon-next']")))
                 driver.find_element_by_xpath("//a[@class='icon icon-next']").click()
                 time.sleep(3)
@@ -93,23 +96,28 @@ class JiraTestsDownload(unittest.TestCase):
                 break
         print("Downloading done")
 
-    def add_test_to_epic(self, test_element_key):
-        driver = self.driver
-        wait = WebDriverWait(driver, 1)
-        driver.implicitly_wait(0)
-        epic_name = ""
-        try:
-            try:
-                wait.until(EC.presence_of_element_located((By.XPATH, "//div[@data-fieldtype='gh-epic-link']//a")))
-                epic_name = driver.find_element_by_xpath("//div[@data-fieldtype='gh-epic-link']//a").text
-            except (NoSuchElementException, StaleElementReferenceException):
-                wait.until(EC.presence_of_element_located((By.XPATH, "(//a[@class='lozenge'])[2]")))
-                epic_name = driver.find_element_by_xpath("(//a[@class='lozenge'])[2]").text
-        except (StaleElementReferenceException, TimeoutException, NoSuchElementException):
-            pass
-        if epic_name.strip():
-            epics_dictionary.setdefault(epic_name, []).append(test_element_key)
-            print(epics_dictionary)
+    # def add_test_to_epic(self, test_element_key):
+    #     driver = self.driver
+    #     wait = WebDriverWait(driver, 1)
+    #     driver.implicitly_wait(0)
+    #     epic_name = ""
+    #     try:
+    #         try:
+    #             wait.until(EC.presence_of_element_located((By.XPATH, "//div[@data-fieldtype='gh-epic-link']//a")))
+    #             epic_name = driver.find_element_by_xpath("//div[@data-fieldtype='gh-epic-link']//a").text
+    #         except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
+    #             wait.until(EC.presence_of_element_located((By.XPATH, "(//a[@class='lozenge'])[2]")))
+    #             epic_name = driver.find_element_by_xpath("(//a[@class='lozenge'])[2]").text
+    #     except (StaleElementReferenceException, TimeoutException, NoSuchElementException):
+    #         pass
+    #     if epic_name.strip():
+    #         epics_dictionary.setdefault(epic_name, []).append(test_element_key)
+    #         print(epics_dictionary)
+
+    @classmethod
+    def tearDownClass(self):
+        time.sleep(1)
+        self.driver.close()
 
 #
 # def rename_files():
@@ -158,16 +166,12 @@ def save_as_docx(name):  # Github conversion solution
 def save_to_docx():  # chceck obs if it doesnt work
     file_names = os.listdir(download_path + "\\DocFiles")
     for name in file_names:
+        if os.path.exists((download_path + "\\DocxFiles\\" + name)[:-3] + "docx"):
+            os.remove((download_path + "\\DocxFiles\\" + name)[:-3] + "docx")
         save_as_docx(name)
 
 
 def remove_doc_files():  # NOW IM CHECKING FLOW, IS THIS NECESSARY?
-    os.chdir(download_path + "\\DocxFiles")
-    filenames = os.listdir(download_path + "\\DocxFiles")
-    for file in filenames:
-        if file.endswith(".doc"):
-            os.remove(file)
-
     #  Remove existing RWS filled template files
     os.chdir(download_path + "\\TestTemplates")
     for filename in os.listdir(download_path + "\\TestTemplates"):
@@ -176,15 +180,21 @@ def remove_doc_files():  # NOW IM CHECKING FLOW, IS THIS NECESSARY?
     time.sleep(2)
 
 
-
 def read_docx_files():
-    files = glob.glob(download_path + "\\DocxFiles\\Copy*")
+    files = glob.glob(download_path + "\\DocxFiles\\SSMWE*")
     os.chdir(download_path)
     for file in files:
+        if os.path.exists(download_path + "\\TestTemplates\\RWS-" + os.path.basename(file)):
+            os.remove(download_path + "\\TestTemplates\\RWS-" + os.path.basename(file))
         docx_handler = docx.Document(file)
         docx_tables = docx_handler.tables
-        title = docx_tables[0].rows[0].cells[0].text
-        jira_test_id = title.split()[0]
+        docx_hyperlink_handler = docxpy.DOCReader(file)
+        docx_hyperlink_handler.process()
+        hyperlinks = docx_hyperlink_handler.data['links']
+        test_scenario_hyperlink_text = str(hyperlinks[0][0])[2:-1]
+        jira_id = docx_tables[0].rows[0].cells[0].text
+        jira_test_id = jira_id.split()[0]
+
         if "Zephyr" in docx_tables[2].rows[2].cells[0].text:
             zephyr_tests = docx_tables[2].rows[2].cells[1]
         elif "Zephyr" in docx_tables[2].rows[3].cells[0].text:
@@ -220,19 +230,30 @@ def read_docx_files():
         font.name = 'Calibri'
         paragraph = rws_template.styles['Normal'].paragraph_format
         paragraph.space_after = Pt(3)
+        paragraph.left_indent = Pt(0)
         for x in range(1, int(number_of_teststeps)):
             rws_table[0].add_row()
 
         os.chdir(download_path)
         test_id = rws_table[0].rows[0].cells[2].paragraphs[0]
         test_id.add_run(jira_test_id)
+        test_scenario = rws_table[0].rows[1].cells[2].paragraphs[0]
+        test_scenario.add_run(test_scenario_hyperlink_text)
         user_story = rws_table[0].rows[4].cells[2].paragraphs[0]
         user_story.add_run(jira_test_id)
 
         steps_only_table = rws_table[0].rows[6:]
 
+        # For some reason indentation formatting by using styles doesnt work for already existing table paragraphs
+        # You should only use styles for newly-created elements
+        # steps_only_table[0].cells[0].paragraphs[0].style = rws_template.styles['Normal']
+        # So I had to do it manually
         for x in range(0, int(number_of_teststeps)):
-            steps_only_table[x].cells[0].paragraphs[0].add_run(x + 1)
+            steps_only_table[x].cells[0].paragraphs[0].paragraph_format.left_indent = Pt(12)
+            # steps_only_table[x].cells[0].paragraphs[0].runs[0].font.size = Pt(15)
+
+        for x in range(0, int(number_of_teststeps)):
+            steps_only_table[x].cells[0].paragraphs[0].add_run(str(x + 1) + ".")
         for x in range(0, int(number_of_teststeps)):
             steps_only_table[x].cells[1].paragraphs[0].add_run(list_of_test_steps[x])
         for x in range(0, int(number_of_teststeps)):
@@ -244,6 +265,34 @@ def read_docx_files():
 
 
 def move_files_to_epics():
+    files = glob.glob(download_path + "\\DocxFiles\\SSMWE*")
+    os.chdir(download_path)
+    for file in files:
+        docx_handler = docx.Document(file)
+        docx_tables = docx_handler.tables
+        docx_hyperlink_handler = docxpy.DOCReader(file)
+        docx_hyperlink_handler.process()
+        hyperlinks = docx_hyperlink_handler.data['links']
+        # test_scenario_hyperlink_text = str(hyperlinks[0][0])[2:-1]
+
+        epic_link = ""
+        list_of_elements = []
+        for x in range(len(docx_tables[2].rows)):
+            list_of_elements.append(docx_tables[2].rows[x].cells[0].text)
+
+        for index, elem in enumerate(list_of_elements):
+            if "Epic/Theme" in elem:
+                epic_link = docx_tables[2].rows[index].cells[1].text
+                break
+        for elem in list_of_elements:
+            if "Epic Link" in elem:
+                epic_link = str(hyperlinks[len(hyperlinks-1)][0])[2:-1]
+                break
+        # my brain doesnt work any longer... need a break
+
+
+
+
     os.chdir(download_path + "\\TestTemplates")
     for filename, epic_name in epics_dictionary.items():
         if filename in os.path.exists(download_path + "\\TestTemplates\\" + filename):  # kinda unnecessary but whatever for now
@@ -256,11 +305,10 @@ def move_files_to_epics():
 
 if __name__ == "__main__":
 
-    # unittest.main()
+    unittest.main(exit=False)  # Dont stop the program after test execution (it would skip below functions)
     create_dir_hierarchy()
     move_doc_files()
     save_to_docx()
-    # remove_doc_files()
-    # read_docx_files()
-    # move_files_to_epics()
+    read_docx_files()
+    move_files_to_epics()
 
