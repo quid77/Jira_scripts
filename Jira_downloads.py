@@ -2,27 +2,26 @@ from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException, TimeoutException
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
-import getpass
+import pathlib
 import time
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import os
 import shutil
-import difflib
 from docx.shared import Inches, Pt
 import glob
 import re
 import win32com.client as win32
 from win32com.client import constants
 import docx
-import fnmatch
 import unittest
 
 
-download_path = "C:\\PycharmProjects\\Jira_scripts\\Downloads";
+download_path = str(pathlib.Path(__file__).parent.absolute()) + "\\Downloads"
 user_login = ""
 user_password = ""
 
+epics_dictionary = {}
 
 class JiraTestsDownload(unittest.TestCase):
 
@@ -68,9 +67,10 @@ class JiraTestsDownload(unittest.TestCase):
             for test_element in tests_list:
                 test_element.click()
                 for x in range(0, 10):
-                    try:  # DOuble space, ", break the script
-                        test_element_title = test_element.find_element_by_xpath(".//span[@class='issue-link-summary']").text
-                        wait.until(EC.presence_of_element_located((By.XPATH, "//h1[text()[contains(.,\"%s\")]]" % test_element_title)))
+                    try:
+                        test_element_key = test_element.find_element_by_xpath(".//span[@class='issue-link-key']").text
+                        wait.until(EC.presence_of_element_located((By.XPATH, "//a[@id='key-val']".format(test_element_key))))
+                        JiraTestsDownload.add_test_to_epic(self, test_element_key)
                         break
                     except (StaleElementReferenceException, TimeoutException):
                         time.sleep(0.2)
@@ -93,43 +93,61 @@ class JiraTestsDownload(unittest.TestCase):
                 break
         print("Downloading done")
 
+    def add_test_to_epic(self, test_element_key):
+        driver = self.driver
+        wait = WebDriverWait(driver, 1)
+        driver.implicitly_wait(0)
+        epic_name = ""
+        try:
+            try:
+                wait.until(EC.presence_of_element_located((By.XPATH, "//div[@data-fieldtype='gh-epic-link']//a")))
+                epic_name = driver.find_element_by_xpath("//div[@data-fieldtype='gh-epic-link']//a").text
+            except (NoSuchElementException, StaleElementReferenceException):
+                wait.until(EC.presence_of_element_located((By.XPATH, "(//a[@class='lozenge'])[2]")))
+                epic_name = driver.find_element_by_xpath("(//a[@class='lozenge'])[2]").text
+        except (StaleElementReferenceException, TimeoutException, NoSuchElementException):
+            pass
+        if epic_name.strip():
+            epics_dictionary.setdefault(epic_name, []).append(test_element_key)
+            print(epics_dictionary)
 
-def create_folders():
-    for filename in os.listdir(download_path):
-        if filename.startswith("SSMWE") and not os.path.exists(download_path + filename):
-            file_path = download_path + "\\Directories\\" + filename
-            os.makedirs(file_path[:-4])
+#
+# def rename_files():
+#     os.chdir(download_path)
+#     for filename in os.listdir(download_path):
+#         if filename.startswith("SSMWE"):
+#             os.rename(filename, filename.replace("SSMWE-", "Copy-"))
 
 
-def rename_files():
-    os.chdir("C:\\PycharmProjects\\Jira_scripts\\Downloads")
-    for filename in os.listdir(download_path):
-        if filename.startswith("SSMWE"):
-            os.rename(filename, filename.replace("SSMWE-", "Copy-"))
-
-
-def move_files():
+def create_dir_hierarchy():
     if not os.path.exists(download_path + "\\DocFiles"):
-        os.makedev(download_path + "\\DocFiles")
+        os.makedirs(download_path + "\\DocFiles")
+    if not os.path.exists(download_path + "\\DocxFiles"):
+        os.makedirs(download_path + "\\DocxFiles")
+    if not os.path.exists(download_path + "\\TestTemplates"):
+        os.makedirs(download_path + "\\TestTemplates")
+    if not os.path.exists(download_path + "\\Directories"):
+        os.makedirs(download_path + "\\Directories")
+
+
+def move_doc_files():
     # Create list of paths to .doc files
     for filename in os.listdir(download_path):
-        if filename.endswith(".doc"):
-            file_path = download_path + "\\" + filename
-            shutil.move(file_path, download_path + "\\DocFiles")
+        if filename.endswith(".doc") and filename.startswith("SSMWE"):
+            if os.path.exists(download_path + "\\DocFiles\\" + filename):
+                os.remove(download_path + "\\DocFiles\\" + filename)
+            shutil.move(download_path + "\\" + filename, download_path + "\\DocFiles")
 
-
-# Create list of paths to .doc files
-# paths_to_files = os.listdir(r"C:/PycharmProjects/Jira_scripts/Downloads/DocFiles")
 
 # this function isn't standalone, use save_to_docx instead
-def save_as_docx(paths_to_files):  # Github conversion solution
+def save_as_docx(name):  # Github conversion solution
     # Opening MS Word
     word = win32.gencache.EnsureDispatch('Word.Application')
-    doc = word.Documents.Open(paths_to_files)
+    doc = word.Documents.Open(download_path + "\\DocFiles\\" + name)
     doc.Activate()
 
     # Rename path with .docx
-    new_file_abs = os.path.abspath(paths_to_files)
+    new_file_abs = os.path.abspath(download_path + "\\DocxFiles\\" + name)
     new_file_abs = re.sub(r'\.\w+$', '.docx', new_file_abs)
 
     # Save and Close
@@ -138,19 +156,19 @@ def save_as_docx(paths_to_files):  # Github conversion solution
 
 
 def save_to_docx():  # chceck obs if it doesnt work
-    file_names = os.listdir(r"C:\PycharmProjects\Jira_scripts\Downloads\DocFiles")
-    paths_to_files = [download_path + "\\DocFiles\\" + name for name in file_names]
-    for path in paths_to_files:
-        save_as_docx(path)
+    file_names = os.listdir(download_path + "\\DocFiles")
+    for name in file_names:
+        save_as_docx(name)
 
-def remove_doc_files():
-    os.chdir(download_path + "\\DocFiles")
-    filenames = os.listdir(download_path + "\\DocFiles")
+
+def remove_doc_files():  # NOW IM CHECKING FLOW, IS THIS NECESSARY?
+    os.chdir(download_path + "\\DocxFiles")
+    filenames = os.listdir(download_path + "\\DocxFiles")
     for file in filenames:
         if file.endswith(".doc"):
             os.remove(file)
 
-    #  Remove existing RWS filled-template files
+    #  Remove existing RWS filled template files
     os.chdir(download_path + "\\TestTemplates")
     for filename in os.listdir(download_path + "\\TestTemplates"):
         if filename.startswith("RWS"):
@@ -158,23 +176,22 @@ def remove_doc_files():
     time.sleep(2)
 
 
+
 def read_docx_files():
-    files = glob.glob(download_path + "\\DocFiles\\Copy*")
+    files = glob.glob(download_path + "\\DocxFiles\\Copy*")
     os.chdir(download_path)
     for file in files:
         docx_handler = docx.Document(file)
         docx_tables = docx_handler.tables
         title = docx_tables[0].rows[0].cells[0].text
         jira_test_id = title.split()[0]
-        zephyr_teststeps = docx_tables[2].rows[2].cells[0].text
-        if "Zephyr" in zephyr_teststeps:
+        if "Zephyr" in docx_tables[2].rows[2].cells[0].text:
             zephyr_tests = docx_tables[2].rows[2].cells[1]
-        else:
+        elif "Zephyr" in docx_tables[2].rows[3].cells[0].text:
             zephyr_tests = docx_tables[2].rows[3].cells[1]
+        else:
+            break
         zephyr_tests_table = zephyr_tests.tables
-        #
-        # number_of_teststeps = zephyr_tests_table[0].rows[-1].cells[0].text
-        # print(number_of_teststeps)
 
         zephyr_rows = zephyr_tests_table[0].rows  # get row id's
         zephyr_rows = zephyr_rows[1:]  # remove first cell from all rows (e.g. "Test Step", "Test Data", etc.)
@@ -215,6 +232,8 @@ def read_docx_files():
         steps_only_table = rws_table[0].rows[6:]
 
         for x in range(0, int(number_of_teststeps)):
+            steps_only_table[x].cells[0].paragraphs[0].add_run(x + 1)
+        for x in range(0, int(number_of_teststeps)):
             steps_only_table[x].cells[1].paragraphs[0].add_run(list_of_test_steps[x])
         for x in range(0, int(number_of_teststeps)):
             steps_only_table[x].cells[2].paragraphs[0].add_run(list_of_test_conditions[x])
@@ -224,12 +243,24 @@ def read_docx_files():
         rws_template.save(file_save_path)
 
 
+def move_files_to_epics():
+    os.chdir(download_path + "\\TestTemplates")
+    for filename, epic_name in epics_dictionary.items():
+        if filename in os.path.exists(download_path + "\\TestTemplates\\" + filename):  # kinda unnecessary but whatever for now
+            file_path = download_path + "\\Directories\\" + epic_name
+            if filename.startswith("RWS") and not os.path.exists(download_path + epic_name):
+                os.makedirs(file_path)
+            shutil.move(download_path + "\\TestTemplates\\" + filename, file_path)
+
+
+
 if __name__ == "__main__":
 
-    unittest.main()
-    # save_to_docx()
+    # unittest.main()
+    create_dir_hierarchy()
+    move_doc_files()
+    save_to_docx()
     # remove_doc_files()
     # read_docx_files()
-    # read_docx_files()
-
+    # move_files_to_epics()
 
