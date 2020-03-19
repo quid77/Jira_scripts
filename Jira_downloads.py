@@ -19,8 +19,13 @@ import unittest
 
 script_path = pathlib.Path(__file__).parent.absolute()
 download_path = str(script_path) + "\\Downloads"
+<<<<<<< HEAD
 user_login = ""
 user_password = ""
+=======
+user_login = "akulig"
+user_password = "5lazzjdzZ!!"
+>>>>>>> 0bf054bdc9b8004ac889905147e468b2a2a0f664
 
 
 class JiraTestsDownload(unittest.TestCase):
