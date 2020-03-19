@@ -3,6 +3,7 @@ from selenium.common.exceptions import NoSuchElementException, StaleElementRefer
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 import pathlib
+import win32com
 import time
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -16,12 +17,11 @@ from win32com.client import constants
 import docx, docxpy
 import unittest
 
-
-download_path = str(pathlib.Path(__file__).parent.absolute()) + "\\Downloads"
+script_path = pathlib.Path(__file__).parent.absolute()
+download_path = str(script_path) + "\\Downloads"
 user_login = ""
 user_password = ""
 
-epics_dictionary = {}
 
 class JiraTestsDownload(unittest.TestCase):
 
@@ -171,21 +171,12 @@ def save_to_docx():  # chceck obs if it doesnt work
         save_as_docx(name)
 
 
-def remove_doc_files():  # NOW IM CHECKING FLOW, IS THIS NECESSARY?
-    #  Remove existing RWS filled template files
-    os.chdir(download_path + "\\TestTemplates")
-    for filename in os.listdir(download_path + "\\TestTemplates"):
-        if filename.startswith("RWS"):
-            os.remove(filename)
-    time.sleep(2)
-
-
 def read_docx_files():
     files = glob.glob(download_path + "\\DocxFiles\\SSMWE*")
     os.chdir(download_path)
     for file in files:
-        if os.path.exists(download_path + "\\TestTemplates\\RWS-" + os.path.basename(file)):
-            os.remove(download_path + "\\TestTemplates\\RWS-" + os.path.basename(file))
+        if os.path.exists(download_path + "\\TestTemplates\\" + os.path.basename(file)):
+            os.remove(download_path + "\\TestTemplates\\" + os.path.basename(file))
         docx_handler = docx.Document(file)
         docx_tables = docx_handler.tables
         docx_hyperlink_handler = docxpy.DOCReader(file)
@@ -222,7 +213,7 @@ def read_docx_files():
             list_of_exptected_results.append(row.cells[3].text)
 
         number_of_teststeps = zephyr_tests_table[0].rows[-1].cells[0].text
-        file_save_path = download_path + "\\TestTemplates\\RWS-" + os.path.basename(file)
+        file_save_path = download_path + "\\TestTemplates\\" + os.path.basename(file)
 
         rws_template = docx.Document(download_path + "\\SampleTestScripts1.docx")
         rws_table = rws_template.tables
@@ -261,54 +252,88 @@ def read_docx_files():
         for x in range(0, int(number_of_teststeps)):
             steps_only_table[x].cells[3].paragraphs[0].add_run(list_of_exptected_results[x])
 
+        rws_template.add_page_break()
         rws_template.save(file_save_path)
 
 
 def move_files_to_epics():
     files = glob.glob(download_path + "\\DocxFiles\\SSMWE*")
     os.chdir(download_path)
-    for file in files:
-        docx_handler = docx.Document(file)
+    for file_path in files:
+        docx_handler = docx.Document(file_path)
         docx_tables = docx_handler.tables
-        docx_hyperlink_handler = docxpy.DOCReader(file)
+        docx_hyperlink_handler = docxpy.DOCReader(file_path)
         docx_hyperlink_handler.process()
         hyperlinks = docx_hyperlink_handler.data['links']
-        # test_scenario_hyperlink_text = str(hyperlinks[0][0])[2:-1]
 
-        epic_link = ""
+        epic_name = ""
         list_of_elements = []
         for x in range(len(docx_tables[2].rows)):
             list_of_elements.append(docx_tables[2].rows[x].cells[0].text)
 
         for index, elem in enumerate(list_of_elements):
             if "Epic/Theme" in elem:
-                epic_link = docx_tables[2].rows[index].cells[1].text
+                epic_name = docx_tables[2].rows[index].cells[1].text
                 break
         for elem in list_of_elements:
             if "Epic Link" in elem:
-                epic_link = str(hyperlinks[len(hyperlinks-1)][0])[2:-1]
+                epic_name = (str(hyperlinks[len(hyperlinks)-1][0])[2:-1]).strip()
+                for char in r'/<\>?:|"*':
+                    epic_name = epic_name.replace(char, "")
                 break
-        # my brain doesnt work any longer... need a break
+        if not epic_name:
+            break
+
+        os.chdir(download_path + "\\TestTemplates")
+        if not os.path.exists(download_path + "\\Directories\\" + epic_name):
+            os.makedirs(download_path + "\\Directories\\" + epic_name)
+        if os.path.exists(download_path + "\\TestTemplates\\" + os.path.basename(file_path)):
+            if os.path.exists(download_path + "\\Directories\\" + epic_name + "\\" + os.path.basename(file_path)):
+                os.remove(download_path + "\\Directories\\" + epic_name + "\\" + os.path.basename(file_path))
+            shutil.move(download_path + "\\TestTemplates\\" + os.path.basename(file_path), download_path + "\\Directories\\" + epic_name)
 
 
+def merge_files_in_epics():
+    epics_dirs = glob.glob(download_path + "\\Directories\\*")
+    for epic_dir in epics_dirs:
+        if not os.listdir(epic_dir) or not os.path.isdir(epic_dir):
+            break
+        os.chdir(epic_dir)
+        files = glob.glob(epic_dir + "\\SSMWE*")
+        epic_docx = docx.Document(str(script_path) + "\\EpicTemplate.docx")
+        epic_docx.add_page_break()
 
+        font = epic_docx.styles['Normal'].font
+        font.name = 'Calibri'
+        paragraph = epic_docx.styles['Normal'].paragraph_format
+        paragraph.space_after = Pt(3)
+        paragraph.left_indent = Pt(0)
 
-    os.chdir(download_path + "\\TestTemplates")
-    for filename, epic_name in epics_dictionary.items():
-        if filename in os.path.exists(download_path + "\\TestTemplates\\" + filename):  # kinda unnecessary but whatever for now
-            file_path = download_path + "\\Directories\\" + epic_name
-            if filename.startswith("RWS") and not os.path.exists(download_path + epic_name):
-                os.makedirs(file_path)
-            shutil.move(download_path + "\\TestTemplates\\" + filename, file_path)
+        for index, file_path in enumerate(files):
+            docx_handler = docx.Document(file_path)
 
+            if index < len(files)-1:
+                docx_handler.add_page_break()
+            for index, element in enumerate(docx_handler.element.body):
+                epic_docx.element.body.append(element)  # CHECK WHAT DOES IT DO
+                if index == 4:
+                    break
+        epic_docx.save(epic_dir + "\\" + os.path.basename(epic_dir) + ".docx")
+        time.sleep(2)
+        word = win32com.client.DispatchEx("Word.Application")
+        doc = word.Documents.Open(epic_dir + "\\" + os.path.basename(epic_dir) + ".docx")
+        doc.TablesOfContents(1).Update()
+        doc.Close(SaveChanges=True)
+        word.Quit()
 
 
 if __name__ == "__main__":
 
-    unittest.main(exit=False)  # Dont stop the program after test execution (it would skip below functions)
-    create_dir_hierarchy()
-    move_doc_files()
-    save_to_docx()
-    read_docx_files()
-    move_files_to_epics()
+    # unittest.main(exit=False)  # Dont stop the program after test execution (it would skip below functions)
+    # create_dir_hierarchy()
+    # move_doc_files()
+    # save_to_docx()
+    # read_docx_files()
+    # move_files_to_epics()
+    merge_files_in_epics()
 
