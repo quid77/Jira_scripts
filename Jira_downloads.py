@@ -19,9 +19,9 @@ import unittest
 
 script_path = pathlib.Path(__file__).parent.absolute()
 download_path = str(script_path) + "\\Downloads"
-
 user_login = ""
 user_password = ""
+
 
 class JiraTestsDownload(unittest.TestCase):
 
@@ -65,66 +65,44 @@ class JiraTestsDownload(unittest.TestCase):
         while True:
             tests_list = driver.find_elements_by_class_name("splitview-issue-link")
             for test_element in tests_list:
-                if tests_list.index(test_element) == 3:  # FOR TESTIG ONLY
-                    break  # FOR TESTIG ONLY
+                # if tests_list.index(test_element) == 200:  # FOR TESTIG ONLY
+                    # break  # FOR TESTIG ONLY
                 test_element.click()
                 for x in range(0, 10):
                     try:
                         test_element_key = test_element.find_element_by_xpath(".//span[@class='issue-link-key']").text
                         wait.until(EC.presence_of_element_located((By.XPATH, "//a[@id='key-val']".format(test_element_key))))
-                        # JiraTestsDownload.add_test_to_epic(self, test_element_key)
                         break
                     except (StaleElementReferenceException, TimeoutException):
                         time.sleep(0.2)
                         continue
                 for x in range(0, 10):
                     try:
-                        wait.until(EC.element_to_be_clickable((By.XPATH, "//*[@id='viewissue-export']")))
-                        driver.find_element_by_xpath("//*[@id='viewissue-export']").click()
-                        wait.until(EC.element_to_be_clickable((By.XPATH, "//*[@id='jira.issueviews:issue-word']")))
-                        driver.find_element_by_xpath("//*[@id='jira.issueviews:issue-word']").click()
+                        export = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[@id='viewissue-export']")))
+                        driver.execute_script("arguments[0].click();", export)
+                        word = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[@id='jira.issueviews:issue-word']")))
+                        driver.execute_script("arguments[0].click();", word)
                         break
                     except (StaleElementReferenceException, TimeoutException):
                         time.sleep(0.2)
                         continue
             try:
-                break  # FOR TESTIG ONLY
                 wait.until(EC.element_to_be_clickable((By.XPATH, "//a[@class='icon icon-next']")))
                 driver.find_element_by_xpath("//a[@class='icon icon-next']").click()
                 time.sleep(3)
-            except NoSuchElementException:
+            except (TimeoutException, NoSuchElementException):
                 break
         print("Downloading done")
-
-    # def add_test_to_epic(self, test_element_key):
-    #     driver = self.driver
-    #     wait = WebDriverWait(driver, 1)
-    #     driver.implicitly_wait(0)
-    #     epic_name = ""
-    #     try:
-    #         try:
-    #             wait.until(EC.presence_of_element_located((By.XPATH, "//div[@data-fieldtype='gh-epic-link']//a")))
-    #             epic_name = driver.find_element_by_xpath("//div[@data-fieldtype='gh-epic-link']//a").text
-    #         except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
-    #             wait.until(EC.presence_of_element_located((By.XPATH, "(//a[@class='lozenge'])[2]")))
-    #             epic_name = driver.find_element_by_xpath("(//a[@class='lozenge'])[2]").text
-    #     except (StaleElementReferenceException, TimeoutException, NoSuchElementException):
-    #         pass
-    #     if epic_name.strip():
-    #         epics_dictionary.setdefault(epic_name, []).append(test_element_key)
-    #         print(epics_dictionary)
 
     @classmethod
     def tearDownClass(self):
         time.sleep(1)
         self.driver.close()
-
-#
-# def rename_files():
-#     os.chdir(download_path)
-#     for filename in os.listdir(download_path):
-#         if filename.startswith("SSMWE"):
-#             os.rename(filename, filename.replace("SSMWE-", "Copy-"))
+        # Replace files if newer version of that file was downloaded
+        files = glob.glob(download_path + "\\SSMWE*")
+        for file in files:
+            if file[:-4].endswith(")"):
+                shutil.move(file, file[:-8] + ".doc")
 
 
 def create_dir_hierarchy():
@@ -144,7 +122,7 @@ def move_doc_files():
         if filename.endswith(".doc") and filename.startswith("SSMWE"):
             if os.path.exists(download_path + "\\DocFiles\\" + filename):
                 os.remove(download_path + "\\DocFiles\\" + filename)
-            shutil.move(download_path + "\\" + filename, download_path + "\\DocFiles")
+            shutil.move(download_path + "\\" + filename, download_path + "\\DocFiles\\" + filename)
 
 
 # this function isn't standalone, use save_to_docx instead
@@ -163,7 +141,7 @@ def save_as_docx(name):  # Github conversion solution
     doc.Close(False)
 
 
-def save_to_docx():  # chceck obs if it doesnt work
+def save_to_docx():
     file_names = os.listdir(download_path + "\\DocFiles")
     for name in file_names:
         if os.path.exists((download_path + "\\DocxFiles\\" + name)[:-3] + "docx"):
@@ -186,12 +164,18 @@ def read_docx_files():
         jira_id = docx_tables[0].rows[0].cells[0].text
         jira_test_id = jira_id.split()[0]
 
-        if "Zephyr" in docx_tables[2].rows[2].cells[0].text:
-            zephyr_tests = docx_tables[2].rows[2].cells[1]
-        elif "Zephyr" in docx_tables[2].rows[3].cells[0].text:
-            zephyr_tests = docx_tables[2].rows[3].cells[1]
-        else:
-            break
+        zephyr_tests = None
+        for x in range(len(docx_tables[2].rows)):
+            if "Zephyr" in docx_tables[2].rows[x].cells[0].text:
+                zephyr_tests = docx_tables[2].rows[x].cells[1]
+                break
+        if not zephyr_tests:
+            # Move test without steps to separate dir
+            if not os.path.exists(download_path + "\\DocxFiles\\TestsWithoutSteps"):
+                os.makedirs(download_path + "\\DocxFiles\\TestsWithoutSteps")
+            shutil.move(download_path + "\\DocxFiles\\" + os.path.basename(file),
+                        download_path + "\\DocxFiles\\TestsWithoutSteps\\" + os.path.basename(file))
+            continue
         zephyr_tests_table = zephyr_tests.tables
 
         zephyr_rows = zephyr_tests_table[0].rows  # get row id's
@@ -215,7 +199,7 @@ def read_docx_files():
         number_of_teststeps = zephyr_tests_table[0].rows[-1].cells[0].text
         file_save_path = download_path + "\\TestTemplates\\" + os.path.basename(file)
 
-        rws_template = docx.Document(download_path + "\\SampleTestScripts1.docx")
+        rws_template = docx.Document(str(script_path) + "\\SampleTestScripts1.docx")
         rws_table = rws_template.tables
         font = rws_template.styles['Normal'].font
         font.name = 'Calibri'
@@ -235,13 +219,9 @@ def read_docx_files():
 
         steps_only_table = rws_table[0].rows[6:]
 
-        # For some reason indentation formatting by using styles doesnt work for already existing table paragraphs
-        # You should only use styles for newly-created elements
         # steps_only_table[0].cells[0].paragraphs[0].style = rws_template.styles['Normal']
-        # So I had to do it manually
         for x in range(0, int(number_of_teststeps)):
             steps_only_table[x].cells[0].paragraphs[0].paragraph_format.left_indent = Pt(12)
-            # steps_only_table[x].cells[0].paragraphs[0].runs[0].font.size = Pt(15)
 
         for x in range(0, int(number_of_teststeps)):
             steps_only_table[x].cells[0].paragraphs[0].add_run(str(x + 1) + ".")
@@ -277,20 +257,27 @@ def move_files_to_epics():
                 break
         for elem in list_of_elements:
             if "Epic Link" in elem:
-                epic_name = (str(hyperlinks[len(hyperlinks)-1][0])[2:-1]).strip()
+                for x in range(len(hyperlinks), 0, -1):
+                    if str(hyperlinks[x-1][1]).startswith("https://jira.softserveinc.com/browse/"):
+                        epic_name = (str(hyperlinks[x-1][0])[2:-1]).strip()
+                        break
                 for char in r'/<\>?:|"*':
                     epic_name = epic_name.replace(char, "")
                 break
         if not epic_name:
-            break
+            # Move files without Epic attached to separate dir
+            if not os.path.exists(download_path + "\\TestTemplates\\TestsWithoutEpics"):
+                os.makedirs(download_path + "\\TestTemplates\\TestsWithoutEpics")
+            shutil.move(download_path + "\\TestTemplates\\" + os.path.basename(file_path),
+                        download_path + "\\TestTemplates\\TestsWithoutEpics\\" + os.path.basename(file_path))
+            continue
 
         os.chdir(download_path + "\\TestTemplates")
         if not os.path.exists(download_path + "\\Directories\\" + epic_name):
             os.makedirs(download_path + "\\Directories\\" + epic_name)
         if os.path.exists(download_path + "\\TestTemplates\\" + os.path.basename(file_path)):
-            if os.path.exists(download_path + "\\Directories\\" + epic_name + "\\" + os.path.basename(file_path)):
-                os.remove(download_path + "\\Directories\\" + epic_name + "\\" + os.path.basename(file_path))
-            shutil.move(download_path + "\\TestTemplates\\" + os.path.basename(file_path), download_path + "\\Directories\\" + epic_name)
+            shutil.move(download_path + "\\TestTemplates\\" + os.path.basename(file_path),
+                        download_path + "\\Directories\\" + epic_name + "\\" + os.path.basename(file_path))
 
 
 def merge_files_in_epics():
@@ -300,6 +287,8 @@ def merge_files_in_epics():
             break
         os.chdir(epic_dir)
         files = glob.glob(epic_dir + "\\SSMWE*")
+        if os.path.basename(epic_dir).startswith("SSMWE"):
+            files.pop(0)
         epic_docx = docx.Document(str(script_path) + "\\EpicTemplate.docx")
         epic_docx.add_page_break()
 
@@ -315,12 +304,12 @@ def merge_files_in_epics():
             if index < len(files)-1:
                 docx_handler.add_page_break()
             for index, element in enumerate(docx_handler.element.body):
-                epic_docx.element.body.append(element)  # CHECK WHAT DOES IT DO
+                epic_docx.element.body.append(element)
                 if index == 4:
                     break
         epic_docx.save(epic_dir + "\\" + os.path.basename(epic_dir) + ".docx")
         time.sleep(2)
-        word = win32com.client.DispatchEx("Word.Application")
+        word = win32com.client.gencache.EnsureDispatch("Word.Application")
         doc = word.Documents.Open(epic_dir + "\\" + os.path.basename(epic_dir) + ".docx")
         doc.TablesOfContents(1).Update()
         doc.Close(SaveChanges=True)
@@ -329,11 +318,10 @@ def merge_files_in_epics():
 
 if __name__ == "__main__":
 
-    # unittest.main(exit=False)  # Dont stop the program after test execution (it would skip below functions)
-    # create_dir_hierarchy()
-    # move_doc_files()
-    # save_to_docx()
-    # read_docx_files()
-    # move_files_to_epics()
+    create_dir_hierarchy()
+    unittest.main(exit=False)  # Dont stop the program after test execution (it would skip below functions)
+    move_doc_files()
+    save_to_docx()
+    read_docx_files()
+    move_files_to_epics()
     merge_files_in_epics()
-
